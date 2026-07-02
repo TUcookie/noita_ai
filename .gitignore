@@ -1,0 +1,73 @@
+# === 文档（用户指定） ===
+docs/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# === 虚拟环境 ===
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# === Jupyter Notebook ===
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# === IDE & 编辑器 ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# === 操作系统 ===
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# === 环境变量 ===
+.env
+.env.*
+!.env.example
+
+# === 缓存 & 测试 ===
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+*.log
+
+# === 模型文件（通常很大，不适合上传 GitHub） ===
+*.pth
+*.pt
+*.onnx
+*.h5
+*.pb
+*.ckpt
+*.bin
+checkpoints/
+models/
+
+# === 数据文件 ===
+data/raw/
+data/processed/
+*.parquet
+*.feather
