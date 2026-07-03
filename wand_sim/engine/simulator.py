@@ -221,77 +221,49 @@ def simulate(
     total_hit_chance = 0.0
     recharge_mod = 0.0
     total_rounds = 0
-    mana_exhaustion_time = -1.0   # -1 = 未耗尽
-    firing_time = 0.0             # 有效发射占用的时间
+    mana_exhaustion_time = -1.0
+    firing_time = 0.0
     idx = 0
+    multicast_stack: list[int] = []  # 每个元素 = 该层多重还需要几个投射物
 
     while total_time < simulate_duration:
+        # ── 序列到底 ──
         if idx >= len(spell_sequence):
-            idx = 0
-
-        spell = SPELLS.get(spell_sequence[idx])
-        if spell is None:
-            idx += 1
-            if idx >= len(spell_sequence):
-                idx = 0
-            continue
-
-        # ── 投射修正 ──
-        if spell.type == SpellType.MODIFIER:
-            mods.apply(spell)
-            idx += 1
-            if idx >= len(spell_sequence):
+            if multicast_stack:
+                # 还有未完成的多重 → recharge 后继续取
                 effective_recharge = max(0, wand.stats.recharge_time + recharge_mod)
                 total_time += effective_recharge
                 wand.regen_mana(effective_recharge)
                 recharge_mod = 0.0
                 total_rounds += 1
                 idx = 0
-            continue
+                # 不 clear mods，修正跨轮生效
+            else:
+                idx = 0
 
-        # ── 多重释放 ──
-        if spell.type == SpellType.MULTICAST:
-            cast_count = spell.multicast_count
+        spell = SPELLS.get(spell_sequence[idx])
+        if spell is None:
             idx += 1
-            fired = 0
-            looked = 0
-
-            while fired < cast_count and looked < len(spell_sequence):
-                if idx >= len(spell_sequence):
-                    idx = 0
-                s = SPELLS.get(spell_sequence[idx])
-                if s is None:
-                    idx += 1
-                    looked += 1
-                    continue
-                if s.type == SpellType.MODIFIER:
-                    mods.apply(s)
-                    idx += 1
-                    looked += 1
-                    continue
-                if s.type in (SpellType.PROJECTILE, SpellType.UTILITY):
-                    fr = _fire(wand, s, mods, target, use_random)
-                    if fr.mana_consumed:
-                        total_damage += fr.damage
-                        total_crit_damage += fr.crit_damage
-                        total_projectiles += 1
-                        total_mana_spent += fr.mana_drained
-                        total_hit_chance += fr.hit_chance
-                        recharge_mod += s.recharge_time_mod + mods.recharge_time_mod
-                    elif mana_exhaustion_time < 0:
-                        mana_exhaustion_time = total_time
-                    fired += 1
-                    idx += 1
-                    looked += 1
-                else:
-                    break
-
-            total_time += wand.stats.cast_delay
-            firing_time += wand.stats.cast_delay
-            mods.clear()
             continue
 
-        # ── 投射物 & 实用 ──
+        # ── 多重施法 ──
+        if spell.type == SpellType.MULTICAST:
+            if multicast_stack:
+                # 嵌套：本多重作为父多重的一个"投射物"
+                multicast_stack[-1] -= 1
+                while multicast_stack and multicast_stack[-1] <= 0:
+                    multicast_stack.pop()
+            multicast_stack.append(spell.multicast_count)
+            idx += 1
+            continue
+
+        # ── 投射修正（不消耗多重配额）──
+        if spell.type == SpellType.MODIFIER:
+            mods.apply(spell)
+            idx += 1
+            continue
+
+        # ── 投射物 / 实用 ──
         if spell.type in (SpellType.PROJECTILE, SpellType.UTILITY):
             fr = _fire(wand, spell, mods, target, use_random)
             if fr.mana_consumed:
@@ -304,14 +276,22 @@ def simulate(
             elif mana_exhaustion_time < 0:
                 mana_exhaustion_time = total_time
 
-            delay = wand.stats.cast_delay + spell.cast_delay
-            delay = max(delay, 0.0167)
-            total_time += delay
-            firing_time += delay
-            mods.clear()
-            idx += 1
+            # 消耗一重配额
+            if multicast_stack:
+                multicast_stack[-1] -= 1
+                while multicast_stack and multicast_stack[-1] <= 0:
+                    multicast_stack.pop()
 
-            if idx >= len(spell_sequence):
+            if not multicast_stack:
+                # 多重组结束 → 结算延迟 + 清修正
+                delay = wand.stats.cast_delay + spell.cast_delay
+                total_time += max(delay, 0.0167)
+                firing_time += max(delay, 0.0167)
+                mods.clear()
+            # 组内不结算延迟（投射物共享同一个 cast_delay）
+
+            idx += 1
+            if idx >= len(spell_sequence) and not multicast_stack:
                 effective_recharge = max(0, wand.stats.recharge_time + recharge_mod)
                 total_time += effective_recharge
                 wand.regen_mana(effective_recharge)
