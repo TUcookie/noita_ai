@@ -227,19 +227,15 @@ def simulate(
     multicast_stack: list[int] = []  # 每个元素 = 该层多重还需要几个投射物
 
     while total_time < simulate_duration:
-        # ── 序列到底 ──
+        # ── 序列到底 → 充能（弃牌堆洗回牌库）──
         if idx >= len(spell_sequence):
-            if multicast_stack:
-                # 还有未完成的多重 → recharge 后继续取
-                effective_recharge = max(0, wand.stats.recharge_time + recharge_mod)
-                total_time += effective_recharge
-                wand.regen_mana(effective_recharge)
-                recharge_mod = 0.0
-                total_rounds += 1
-                idx = 0
-                # 不 clear mods，修正跨轮生效
-            else:
-                idx = 0
+            effective_recharge = max(0, wand.stats.recharge_time + recharge_mod)
+            total_time += effective_recharge
+            wand.regen_mana(effective_recharge)
+            recharge_mod = 0.0
+            total_rounds += 1
+            idx = 0
+            # 不 clear mods 和 stack：修正/多重跨轮持续生效
 
         spell = SPELLS.get(spell_sequence[idx])
         if spell is None:
