@@ -22,10 +22,12 @@ class Spell:
     type: SpellType
     mana_drain: int # 法力消耗
     cast_delay: float = 0.0 # 施放延迟（秒）
+    recharge_time_mod: float = 0.0 # 充能时间修正（秒）
     critical_chance: float = 0.0 # 暴击率（%）
     projectile: float = 0.0 # 投射物伤害
     spread: float = 0.0 # 散射角度（°）
     explosion: float = 0.0 # 爆炸伤害
+    slice: float = 0.0 # 切割伤害
     explosion_radius: float = 0.0  # 爆炸半径(像素)
     lifetime_min: int = 0 # 存在时间下限（帧）
     lifetime_max: int = 0 # 存在时间上限（帧）

@@ -6,7 +6,7 @@ from .spell import Spell, SpellType
 '''
 
 SPELLS : dict[str, Spell] = {
-    # 投射物(4/122)
+    # 投射物(5/122)
     "spark_bolt": Spell(
         id="LIGHT_BULLET",
         name_zh="火花弹",
@@ -64,6 +64,19 @@ SPELLS : dict[str, Spell] = {
         initial_speed=700,
         spread=0.6,
     ),
+    "chainsaw": Spell(
+        id="CHAINSAW",
+        name_zh="链锯",
+        type=SpellType.PROJECTILE,
+        mana_drain=1,
+        cast_delay=0.00,
+        recharge_time_mod=-0.17,
+        spread_mod=6.0,
+        slice=12.75,
+        explosion_radius=3,
+        lifetime_min=1,
+        lifetime_max=1,
+    ),
     # 静态投射物(0/45)
     # 投射修正(3/143)
     "damage_plus": Spell(
@@ -108,3 +121,12 @@ SPELLS : dict[str, Spell] = {
     # 实用(0/25)
     # 被动(0/5)
 }
+
+# 按类型分组的快捷访问
+_PROJECTILES = [k for k, v in SPELLS.items() if v.type == SpellType.PROJECTILE]
+_MULTICASTS = [k for k, v in SPELLS.items() if v.type == SpellType.MULTICAST]
+_MODIFIERS  = [k for k, v in SPELLS.items() if v.type == SpellType.MODIFIER]
+_UTILITIES  = [k for k, v in SPELLS.items() if v.type == SpellType.UTILITY]
+
+ALL_SPELL_IDS = list(SPELLS.keys())
+BUILDABLE_IDS = _PROJECTILES + _MULTICASTS + _MODIFIERS + _UTILITIES
