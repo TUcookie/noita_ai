@@ -65,7 +65,29 @@ SPELLS : dict[str, Spell] = {
         spread=0.6,
     ),
     # 静态投射物(0/45)
-    # 投射修正(0/143)
+    # 投射修正(3/143)
+    "damage_plus": Spell(
+        id="DAMAGE",
+        name_zh="伤害增强",
+        type=SpellType.MODIFIER,
+        mana_drain=5,
+        cast_delay=0.08,
+        projectile_mod=10.0,
+    ),
+    "speed_up": Spell(
+        id="SPEED",
+        name_zh="加速",
+        type=SpellType.MODIFIER,
+        mana_drain=3,
+        speed_mod=2.50
+    ),
+    "add_mana": Spell(
+        id="MANA_REDUCE",
+        name_zh="额外法力",
+        type=SpellType.MODIFIER,
+        mana_drain=-30,
+        cast_delay=0.17,
+    ),
     # 多重释放(2/14)
     "double_spell": Spell(
         id="BURST_2",

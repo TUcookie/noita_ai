@@ -17,15 +17,15 @@ class Spell:
     '''法术数据模型'''
 
     # === 基础属性 ===
-    id:str
-    name_zh:str
-    type:SpellType
-    mana_drain:int # 法力消耗
-    cast_delay:float = 0.0 # 施放延迟（秒）
+    id: str
+    name_zh: str
+    type: SpellType
+    mana_drain: int # 法力消耗
+    cast_delay: float = 0.0 # 施放延迟（秒）
     critical_chance: float = 0.0 # 暴击率（%）
     projectile: float = 0.0 # 投射物伤害
     spread: float = 0.0 # 散射角度（°）
-    explosion:float = 0.0 # 爆炸伤害
+    explosion: float = 0.0 # 爆炸伤害
     explosion_radius: float = 0.0  # 爆炸半径(像素)
     lifetime_min: int = 0 # 存在时间下限（帧）
     lifetime_max: int = 0 # 存在时间上限（帧）
