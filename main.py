@@ -3,7 +3,12 @@ from pathlib import Path
 from wand_sim.engine.wand import WandStats
 from wand_sim.engine.simulator import simulate, TargetInfo
 from optimizer.es_search import run_es
-from viz.evolution_plot import make_evolution_animation, plot_evolution_summary
+from viz.evolution_plot import (
+    make_evolution_animation,
+    plot_evolution_summary,
+    plot_timeline_metrics,
+    plot_population_boxplot,
+)
 
 
 def _next_run_dir(base: str = "viz") -> Path:
@@ -34,12 +39,13 @@ def main():
     print("=" * 60)
 
     # 遗传算法
-    history = run_es(
+    history, all_fitness, all_pop = run_es(
         wand=wand,
         target=target,
         pop_size=100,
         elite_count=20,
         generations=50,
+        return_pop=True,
         verbose=True,
     )
 
@@ -51,16 +57,28 @@ def main():
 
     # 30s 验证
     final = simulate(best.sequence, wand, target, simulate_duration=30.0)
-    print(f"DPS: {final.dps:.1f}")
+    print(f"DPS (30s): {final.dps:.1f}")
     print(f"首次法力耗尽时间: {final.mana_exhaustion_time:.1f}s")
     print(f"每秒命中: {final.avg_projectiles_per_second:.1f}")
     print(f"暴击占比: {final.crit_ratio:.1%}")
 
-    # 可视化
+    # 输出
     run_dir = _next_run_dir()
-    print(f"\n可视化生成中 → {run_dir}/")
-    plot_evolution_summary(history, str(run_dir / "evolution_summary.png"))
-    make_evolution_animation(history, str(run_dir / "evolution.gif"))
+    print(f"\n可视化生成中 -> {run_dir}/")
+
+    def _sub(path: str) -> str:
+        p = run_dir / path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return str(p)
+
+    plot_evolution_summary(history, _sub("convergence/evolution_summary.png"))
+
+    plot_timeline_metrics(history, wand, _sub("sequence/best_timeline.png"))
+
+    make_evolution_animation(history, _sub("animation/evolution.gif"))
+
+    plot_population_boxplot(all_fitness, _sub("convergence/population_boxplot.png"))
+
     print("全部生成完毕!")
 
 

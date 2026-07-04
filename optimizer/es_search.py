@@ -69,10 +69,15 @@ def _crossover(a: list[str], b: list[str], max_len: int) -> list[str]:
 
 def _select(pop: list[Candidate], k: int = 3) -> Candidate:
     '''从种群中随机选 k 个， 返回 fitness 最高的'''
-    pool = random.sample(
-        pop, min(k, len(pop))
-    )
+    pool = random.sample(pop, min(k, len(pop)))
     return max(pool, key=lambda c: c.fitness)
+
+
+def _select_rank_weighted(pop: list[Candidate]) -> Candidate:
+    '''排名加权随机选择'''
+    weights = [1.0 / (i + 1) for i in range(len(pop))]
+    return random.choices(pop, weights=weights, k=1)[0]
+
 
 # === 主循环 ===
 def run_es(
@@ -85,7 +90,8 @@ def run_es(
         k: int = 3,
         immigrant_ratio: float = 0.10,
         verbose: bool = True,
-) -> list[Candidate]:
+        return_pop: bool = False,
+):
     """
     运行遗传算法
 
@@ -99,6 +105,7 @@ def run_es(
         k: 锦标赛每次抽几个
         immigrant_ratio: 每代随机移民比例
         verbose: 是否打印每代信息
+        return_pop: 是否记录全部个体的 fitness 和完整序列
 
     Returns:
         history: 每代最优个体列表
@@ -109,6 +116,8 @@ def run_es(
         for _ in range(pop_size)
     ]
     history: list[Candidate] = []
+    all_fitness = []
+    all_pop = []
 
     for gen in range(generations):
         # 评估
@@ -118,6 +127,11 @@ def run_es(
         pop.sort(key=lambda c: c.fitness, reverse=True)
         best = pop[0]
         history.append(deepcopy(best))
+
+        # 记录
+        if return_pop:
+            all_fitness.append([c.fitness for c in pop])
+            all_pop.append(deepcopy(pop))
 
         # 打印
         if verbose:
@@ -159,20 +173,22 @@ def run_es(
 
         while len(new_pop) < pop_size:
             r = random.random()
-            if r < 0.40 and len(elites) >= 2:
+            if r < 0.45 and len(elites) >= 2:
                 # 双亲遗传变异
-                a = random.choice(elites)
-                b = random.choice(elites)
+                a = _select_rank_weighted(pop)
+                b = _select_rank_weighted(pop)
                 child_seq = _crossover(a.sequence, b.sequence, max_seq_len)
                 child_seq = mutate(child_seq, max_seq_len)
-            elif r < 0.85:
+            elif r < 0.95:
                 # 单亲变异
-                parent = random.choice(elites)
+                parent = _select_rank_weighted(pop)
                 child_seq = mutate(parent.sequence, max_seq_len)
             else:
                 # 随机序列
                 child_seq = random_sequence(max_seq_len)
-            
+
             new_pop.append(Candidate(sequence=child_seq))
         pop = new_pop[:pop_size]
+    if return_pop:
+        return history, all_fitness, all_pop
     return history

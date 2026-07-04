@@ -8,6 +8,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib import font_manager
+import numpy as np
 
 from optimizer.es_search import Candidate
 
@@ -77,7 +78,7 @@ def make_evolution_animation(
         scatter.set_data(x, y)
         best = history[frame]
         ax1.set_title(f"{title}  (Gen {frame+1}/{len(history)})")
-        seq_str = "  →  ".join(best.sequence)
+        seq_str = "  ->  ".join(best.sequence)
         seq_text.set_text(seq_str)
         return line, scatter, seq_text
 
@@ -137,45 +138,85 @@ def plot_evolution_summary(
     plt.close(fig)
 
 def plot_timeline_metrics(
-    round_log: list[dict],
+    history: list,
+    wand,
     output_path: str = "best_timeline.png",
 ):
-    """最优序列逐轮指标 3×2 折线图。"""
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    fig.suptitle("Best Sequence — Per-Round Metrics", fontsize=14)
+    """每代最优序列的结构指标 2×3 图。x 轴 = Generation。"""
+    from wand_sim.engine.simulator import simulate
 
-    rounds = [r["round"] for r in round_log]
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig.suptitle("Best Sequence — Per-Generation Structure", fontsize=14)
+
+    gens = list(range(1, len(history) + 1))
+    dps, hit_rates, proj_ps = [], [], []
+    mana_rates, sustains, round_times = [], [], []
+
+    for c in history:
+        r = simulate(c.sequence, wand, use_random=False)
+        dps.append(r.dps)
+        hit_rates.append(r.hit_rate)
+        proj_ps.append(r.avg_projectiles_per_second)
+        mana_rates.append(r.mana_usage_per_second)
+        sustains.append(r.mana_exhaustion_time / max(r.total_time_simulated, 0.01))
+        round_times.append(r.avg_round_time)
 
     panels = [
-        # 上行：续航相关
-        ("mana_rate",     "Mana / s",      "Mana Usage Rate",      0, 0),
-        ("firing_uptime", "Uptime",        "Firing Uptime",        0, 1),
-        ("self_damage",   "Risk",          "Self Damage Risk",     0, 2),
-        # 下行：伤害相关
-        ("avg_dmg",       "Damage",        "Avg Damage per Hit",   1, 0),
-        ("hit_rate",      "Hit Rate",      "Average Hit Rate",     1, 1),
-        ("crit_ratio",    "Crit Ratio",    "Critical Hit Share",   1, 2),
+        (dps,          "DPS",            "DPS",                        0, 0),
+        (hit_rates,    "Hit Rate",       "Hit Rate",                   0, 1),
+        (proj_ps,      "Proj / s",       "Projectiles per Second",     0, 2),
+        (mana_rates,   "Mana / s",       "Mana Usage Rate",            1, 0),
+        (sustains,     "Ratio",          "Sustain Ratio",              1, 1),
+        (round_times,  "Seconds",        "Avg Round Time",             1, 2),
     ]
 
-    for key, ylabel, title, row, col in panels:
+    for values, ylabel, title, row, col in panels:
         ax = axes[row][col]
-        values = [r[key] for r in round_log]
-        ax.plot(rounds, values, "b-", linewidth=1.5, alpha=0.7)
-
-        # 移动平均趋势线
+        ax.plot(gens, values, "b-", linewidth=1.5, alpha=0.7)
         if len(values) >= 5:
-            window = max(3, len(values) // 8)
-            trend = [
-                sum(values[max(0, i-window):i+1]) / min(i+1, window+1)
-                for i in range(len(values))
-            ]
-            ax.plot(rounds, trend, "r--", linewidth=1.5, alpha=0.5)
-
+            w = max(3, len(values) // 6)
+            trend = [sum(values[max(0,i-w):i+1])/min(i+1,w+1) for i in range(len(values))]
+            ax.plot(gens, trend, "r--", linewidth=1.2, alpha=0.4)
         ax.set_ylabel(ylabel)
         ax.set_title(title)
         ax.grid(True, alpha=0.3)
         if row == 1:
-            ax.set_xlabel("Round")
+            ax.set_xlabel("Generation")
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    print(f"Timeline saved to {output_path}")
+    plt.close(fig)
+
+def plot_population_boxplot(
+    all_fitnesses: list[list[float]],
+    output_path: str = "population_boxplot.png",
+):
+    """每代种群 fitness 分布箱线图。"""
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    bp = ax.boxplot(all_fitnesses, patch_artist=True,
+                     showfliers=False,  # 隐藏极端离群值
+                     widths=0.7)
+
+    # 箱子配色
+    n_gens = len(all_fitnesses)
+    colors = plt.cm.Blues([0.3 + 0.7 * i / n_gens for i in range(n_gens)])
+    for patch, color in zip(bp["boxes"], colors):
+        patch.set_facecolor(color)
+
+    # 中位数连线
+    medians = [np.median(f) if f else 0 for f in all_fitnesses]
+    ax.plot(range(1, n_gens + 1), medians, "r-", linewidth=2, label="Median")
+
+    # x 轴标签（每 5 代）
+    ax.set_xticks(list(range(5, n_gens + 1, 5)))
+    ax.set_xticklabels([f"Gen {t}" for t in range(5, n_gens + 1, 5)])
+    ax.set_ylabel("Fitness (DPS)")
+    ax.set_title("Population Fitness Distribution per Generation")
+    ax.legend(loc="upper left")
+    ax.grid(True, alpha=0.3, axis="y")
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

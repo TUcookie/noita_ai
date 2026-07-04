@@ -212,25 +212,35 @@ def simulate(
     idx = 0
     multicast_stack: list[int] = []
     round_log: list[dict] = []
+    # trace 增量追踪
+    _last_proj = 0
+    _last_proj = 0
+    _last_mana = 0.0
+    _last_dmg = 0.0
 
     while total_time < simulate_duration:
         if idx >= len(spell_sequence):
+            _mod_before_clear = recharge_mod
             effective_recharge = max(0.0167, wand.stats.recharge_time + recharge_mod)
             total_time += effective_recharge
             wand.regen_mana(effective_recharge)
             recharge_mod = 0.0
             total_rounds += 1
             if trace and total_projectiles > 0:
+                rm = total_mana_spent - _last_mana
+                rdmg = total_damage - _last_dmg
                 round_log.append({
                     "round": total_rounds,
-                    "time": total_time,
                     "mana_rate": total_mana_spent / total_time,
-                    "avg_dmg": total_damage / total_projectiles,
-                    "hit_rate": total_hit_chance / total_projectiles,
-                    "crit_ratio": total_crit_damage / total_damage if total_damage > 0 else 0,
-                    "firing_uptime": firing_time / total_time,
-                    "self_damage": _estimate_self_damage(spell_sequence),
+                    "cumulative_dps": total_damage / total_time,
+                    "proj_this_round": total_projectiles - _last_proj,
+                    "recharge_time": effective_recharge,
+                    "recharge_mod": _mod_before_clear,
+                    "mana_efficiency": rdmg / max(rm, 1),
                 })
+                _last_proj = total_projectiles
+                _last_mana = total_mana_spent
+                _last_dmg = total_damage
             idx = 0
 
         spell = SPELLS.get(spell_sequence[idx])
