@@ -22,12 +22,13 @@ def _next_run_dir(base: str = "viz") -> Path:
 
 def main():
     wand = WandStats(
-        mana_max=200,
-        mana_charge_speed=30,
+        shuffle=False,
         cast_delay=0.17,
         recharge_time=0.33,
+        mana_max=300,
+        mana_charge_speed=30,
+        capacity=4,
         spread=3.0,
-        capacity=8,
     )
     target = TargetInfo(distance_px=300, is_moving=False)
 
@@ -45,6 +46,7 @@ def main():
         pop_size=100,
         elite_count=20,
         generations=50,
+        max_seq_len=wand.capacity,
         return_pop=True,
         verbose=True,
     )
