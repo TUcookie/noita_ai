@@ -11,8 +11,6 @@ from .spell import Spell, SpellType
 from .spells_db import SPELLS
 
 
-# ── 修正累积器 ────────────────────────────────────────────
-
 @dataclass
 class ModifierStack:
     """累积 modifier 效果，在下一个投射物发射时消费。"""
@@ -40,8 +38,6 @@ class ModifierStack:
         self.recharge_time_mod = 0.0
 
 
-# ── 输入 / 输出 ────────────────────────────────────────────
-
 @dataclass
 class TargetInfo:
     """目标参数。"""
@@ -52,35 +48,27 @@ class TargetInfo:
 @dataclass
 class SimResult:
     """模拟结果。"""
-
-    # 核心指标
     dps: float                          # 每秒伤害
     total_damage: float                 # 总伤害
     total_projectiles: int              # 总发射数
     total_time_simulated: float         # 实际模拟时长
 
-    # 续航
-    mana_exhaustion_time: float         # 法力耗尽时刻（秒），未耗尽 = total_time_simulated
+    mana_exhaustion_time: float         # 法力耗尽时刻（秒）
     total_mana_spent: float             # 总法力消耗
     mana_usage_per_second: float        # 每秒法力消耗
 
-    # 伤害质量
     avg_damage_per_hit: float           # 单发期望伤害
     hit_rate: float                     # 平均命中率
-    crit_ratio: float                   # 暴击伤害占比（0.0–1.0）
+    crit_ratio: float                   # 暴击伤害占比
 
-    # 调试信息
     total_rounds: int                   # 完整发射轮数
     avg_round_time: float               # 平均每轮耗时（秒）
     firing_uptime: float                # 有效发射时间占比
     avg_projectiles_per_second: float   # 每秒发射数
 
-    # 安全 & 溯源
-    self_damage_risk: float             # 自伤风险（0.0–1.0）
+    self_damage_risk: float             # 自伤风险
     spell_sequence: list[str]           # 输入序列
 
-
-# ── 单发结果 ──────────────────────────────────────────────
 
 @dataclass
 class _FireResult:
@@ -90,8 +78,6 @@ class _FireResult:
     hit_chance: float       # 命中率
     crit_damage: float      # 暴击贡献的伤害
 
-
-# ── 辅助函数 ──────────────────────────────────────────────
 
 def _calc_hit_chance(
     distance: float, spread: float, explosion_radius: float, target_moving: bool,
@@ -159,7 +145,6 @@ def _fire(
             mana_drained=mana_taken, hit_chance=hit_chance, crit_damage=0.0,
         )
 
-    # 确定性模式：期望值
     expected_crit_mult = 1.0 + 4.0 * crit_chance
     final_damage = base_damage * hit_chance * expected_crit_mult
     crit_damage = base_damage * hit_chance * 4.0 * crit_chance
@@ -171,12 +156,10 @@ def _fire(
 
 
 def _estimate_self_damage(sequence: list[str]) -> float:
-    """自伤风险（0.0–1.0）。"""
+    """自伤风险"""
     risk_map: dict[str, float] = {}
     return max((risk_map.get(sid, 0.0) for sid in sequence), default=0.0)
 
-
-# ── 主函数 ────────────────────────────────────────────────
 
 def simulate(
     spell_sequence: list[str],
@@ -224,28 +207,25 @@ def simulate(
     mana_exhaustion_time = -1.0
     firing_time = 0.0
     idx = 0
-    multicast_stack: list[int] = []  # 每个元素 = 该层多重还需要几个投射物
+    multicast_stack: list[int] = []
 
     while total_time < simulate_duration:
-        # ── 序列到底 → 充能（弃牌堆洗回牌库）──
         if idx >= len(spell_sequence):
-            effective_recharge = max(0, wand.stats.recharge_time + recharge_mod)
+            effective_recharge = max(0.0167, wand.stats.recharge_time + recharge_mod)
             total_time += effective_recharge
             wand.regen_mana(effective_recharge)
             recharge_mod = 0.0
             total_rounds += 1
             idx = 0
-            # 不 clear mods 和 stack：修正/多重跨轮持续生效
 
         spell = SPELLS.get(spell_sequence[idx])
         if spell is None:
             idx += 1
             continue
 
-        # ── 多重施法 ──
+        # === 多重释放 ===
         if spell.type == SpellType.MULTICAST:
             if multicast_stack:
-                # 嵌套：本多重作为父多重的一个"投射物"
                 multicast_stack[-1] -= 1
                 while multicast_stack and multicast_stack[-1] <= 0:
                     multicast_stack.pop()
@@ -253,13 +233,12 @@ def simulate(
             idx += 1
             continue
 
-        # ── 投射修正（不消耗多重配额）──
         if spell.type == SpellType.MODIFIER:
             mods.apply(spell)
             idx += 1
             continue
 
-        # ── 投射物 / 实用 ──
+        # === 投射物 & 实用 ===
         if spell.type in (SpellType.PROJECTILE, SpellType.UTILITY):
             fr = _fire(wand, spell, mods, target, use_random)
             if fr.mana_consumed:
@@ -272,23 +251,20 @@ def simulate(
             elif mana_exhaustion_time < 0:
                 mana_exhaustion_time = total_time
 
-            # 消耗一重配额
             if multicast_stack:
                 multicast_stack[-1] -= 1
                 while multicast_stack and multicast_stack[-1] <= 0:
                     multicast_stack.pop()
 
             if not multicast_stack:
-                # 多重组结束 → 结算延迟 + 清修正
                 delay = wand.stats.cast_delay + spell.cast_delay
                 total_time += max(delay, 0.0167)
                 firing_time += max(delay, 0.0167)
                 mods.clear()
-            # 组内不结算延迟（投射物共享同一个 cast_delay）
 
             idx += 1
             if idx >= len(spell_sequence) and not multicast_stack:
-                effective_recharge = max(0, wand.stats.recharge_time + recharge_mod)
+                effective_recharge = max(0.0167, wand.stats.recharge_time + recharge_mod)
                 total_time += effective_recharge
                 wand.regen_mana(effective_recharge)
                 recharge_mod = 0.0
@@ -298,7 +274,6 @@ def simulate(
 
         idx += 1
 
-    # ── 汇总 ──
     if total_time == 0:
         return SimResult(
             dps=0.0, total_damage=0.0, total_projectiles=0,

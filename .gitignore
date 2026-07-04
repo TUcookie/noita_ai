@@ -55,6 +55,9 @@ Desktop.ini
 htmlcov/
 *.log
 
+# === 可视化输出 ===
+viz/run*/
+
 # === 模型文件（通常很大，不适合上传 GitHub） ===
 *.pth
 *.pt
