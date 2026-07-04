@@ -1,4 +1,6 @@
 """法术数据模型。"""
+import math
+
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -20,18 +22,47 @@ class Spell:
     id: str
     name_zh: str
     type: SpellType
-    mana_drain: int # 法力消耗
+    uses: int = -1 # 可使用次数
+    mana_drain: int = 0 # 法力消耗
     cast_delay: float = 0.0 # 施放延迟（秒）
+
+    # === 修正 ===
     recharge_time_mod: float = 0.0 # 充能时间修正（秒）
     critical_chance: float = 0.0 # 暴击率（%）
-    projectile: float = 0.0 # 投射物伤害
     spread: float = 0.0 # 散射角度（°）
+    recoil: int = 0 # 后坐力
+
+    # === 投射物 ===
+    explosion_radius: float = 0.0  # 爆炸半径(像素)
+
+    # == 投射物-时间 ==
+    lifetime_min: int = 0 # 存在时间（帧）
+    lifetime_max: int = 0 
+    damage_every: int = 0 # 伤害间隔（帧）
+    timer_Lifetime: int = 0 # 定时时间（帧）
+    can_hit_time: int = 0 # 命中后可再次射击时间（帧）
+    
+
+    # == 投射物-运动 ==
+    initial_speed_min: int = 0 # 初始速度（像素/秒）
+    initial_speed_max: int = 0
+    dead_speed: int = 0 # 最低存在速度——低于阈值时消失
+    bounces: int = 0 # 可弹跳次数
+    motion_spread: float = 0 # 运动中的散射角度（°）
+    gravity: int = 200 # 重力
+    air_friction: float = 1.0 # 空气摩擦力
+    mass: float = 0.10 # 重量
+
+    # === 伤害 ===
+    projectile: float = 0.0 # 投射物伤害
     explosion: float = 0.0 # 爆炸伤害
     slice: float = 0.0 # 切割伤害
-    explosion_radius: float = 0.0  # 爆炸半径(像素)
-    lifetime_min: int = 0 # 存在时间下限（帧）
-    lifetime_max: int = 0 # 存在时间上限（帧）
-    initial_speed: float = 0.0 # 初始速度（像素/秒）
+    fire: float = 0.0 # 火焰伤害
+
+
+    # === 额外属性 ===
+    digging_strength: int = 0 # 挖掘强度
+    digging_power: int = 0 # 挖掘力
 
     # === 触发 ===
     has_trigger: bool = False

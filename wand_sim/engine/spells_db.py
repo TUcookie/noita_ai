@@ -19,7 +19,13 @@ SPELLS : dict[str, Spell] = {
         explosion_radius=2,
         lifetime_min=33,
         lifetime_max=47,
-        initial_speed=800,
+        initial_speed_min=800,
+        initial_speed_max=800,
+        gravity=200,
+        air_friction=1.7,
+        mass=0.04,
+        digging_strength=8,
+        digging_power=400000,
     ),
     "magic_arrow": Spell(
         id="BULLET",
@@ -28,13 +34,18 @@ SPELLS : dict[str, Spell] = {
         mana_drain=20,
         cast_delay=0.07,
         spread_mod=2.0,
+        recoil=23,
         critical_chance=5,
         projectile=10.0,
         explosion_radius=2,
         lifetime_min=33,
         lifetime_max=47,
-        initial_speed=625,
+        initial_speed_min=600,
+        initial_speed_max=650,
         spread=0.6,
+        gravity=200,
+        air_friction=1.2,
+        mass=0.07,
     ),
     "energy_orb": Spell(
         id="SLOW_BULLET",
@@ -42,14 +53,19 @@ SPELLS : dict[str, Spell] = {
         type=SpellType.PROJECTILE,
         mana_drain=30,
         cast_delay=0.10,
-        spread_mod=4.0,
+        spread_mod=3.6,
+        recoil=20,
         projectile=11.25,
         explosion=4.5,
         explosion_radius=15,
-        lifetime_min=50,
-        lifetime_max=50,
-        initial_speed=210,
+        lifetime_min=43,
+        lifetime_max=57,
+        initial_speed_min=180,
+        initial_speed_max=240,
         spread=1.7,
+        gravity=0,
+        air_friction=1.0,
+        mass=0.09,
     ),
     "bouncing_burst": Spell(
         id="RUBBER_BALL",
@@ -59,10 +75,16 @@ SPELLS : dict[str, Spell] = {
         cast_delay=-0.03,
         spread_mod=-1.0,
         projectile=3.0,
-        lifetime_min=750,
-        lifetime_max=750,
-        initial_speed=700,
+        lifetime_min=743,
+        lifetime_max=757,
+        initial_speed_min=650,
+        initial_speed_max=750,
+        dead_speed=5,
+        bounces=10,
         spread=0.6,
+        gravity=250,
+        air_friction=0.6,
+        mass=0.03,
     ),
     "chainsaw": Spell(
         id="CHAINSAW",
@@ -76,6 +98,9 @@ SPELLS : dict[str, Spell] = {
         explosion_radius=3,
         lifetime_min=1,
         lifetime_max=1,
+        damage_every=1,
+        digging_strength=10,
+        digging_power=20000,
     ),
     # 静态投射物(0/45)
     # 投射修正(3/143)
@@ -85,6 +110,7 @@ SPELLS : dict[str, Spell] = {
         type=SpellType.MODIFIER,
         mana_drain=5,
         cast_delay=0.08,
+        recoil=10,
         projectile_mod=10.0,
     ),
     "speed_up": Spell(
@@ -124,9 +150,13 @@ SPELLS : dict[str, Spell] = {
 
 # 按类型分组的快捷访问
 _PROJECTILES = [k for k, v in SPELLS.items() if v.type == SpellType.PROJECTILE]
-_MULTICASTS = [k for k, v in SPELLS.items() if v.type == SpellType.MULTICAST]
+_STATIC_PROJECTILES = [k for k, v in SPELLS.items() if v.type == SpellType.STATIC_PROJECTILE]
 _MODIFIERS  = [k for k, v in SPELLS.items() if v.type == SpellType.MODIFIER]
-_UTILITIES  = [k for k, v in SPELLS.items() if v.type == SpellType.UTILITY]
+_MULTICASTS = [k for k, v in SPELLS.items() if v.type == SpellType.MULTICAST]
+_MATERIALS = [k for k, v in SPELLS.items() if v.type == SpellType.MATERIAL]
+_OTHERS = [k for k, v in SPELLS.items() if v.type == SpellType.OTHER]
+_UTILITIES = [k for k, v in SPELLS.items() if v.type == SpellType.UTILITY]
+_PASSIVES = [k for k, v in SPELLS.items() if v.type == SpellType.PASSIVE]
 
 ALL_SPELL_IDS = list(SPELLS.keys())
-BUILDABLE_IDS = _PROJECTILES + _MULTICASTS + _MODIFIERS + _UTILITIES
+BUILDABLE_IDS = _PROJECTILES + _STATIC_PROJECTILES + _MODIFIERS + _MULTICASTS + _MATERIALS + _OTHERS + _UTILITIES + _PASSIVES
