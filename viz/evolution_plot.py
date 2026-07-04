@@ -135,3 +135,49 @@ def plot_evolution_summary(
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     print(f"Summary saved to {output_path}")
     plt.close(fig)
+
+def plot_timeline_metrics(
+    round_log: list[dict],
+    output_path: str = "best_timeline.png",
+):
+    """最优序列逐轮指标 3×2 折线图。"""
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig.suptitle("Best Sequence — Per-Round Metrics", fontsize=14)
+
+    rounds = [r["round"] for r in round_log]
+
+    panels = [
+        # 上行：续航相关
+        ("mana_rate",     "Mana / s",      "Mana Usage Rate",      0, 0),
+        ("firing_uptime", "Uptime",        "Firing Uptime",        0, 1),
+        ("self_damage",   "Risk",          "Self Damage Risk",     0, 2),
+        # 下行：伤害相关
+        ("avg_dmg",       "Damage",        "Avg Damage per Hit",   1, 0),
+        ("hit_rate",      "Hit Rate",      "Average Hit Rate",     1, 1),
+        ("crit_ratio",    "Crit Ratio",    "Critical Hit Share",   1, 2),
+    ]
+
+    for key, ylabel, title, row, col in panels:
+        ax = axes[row][col]
+        values = [r[key] for r in round_log]
+        ax.plot(rounds, values, "b-", linewidth=1.5, alpha=0.7)
+
+        # 移动平均趋势线
+        if len(values) >= 5:
+            window = max(3, len(values) // 8)
+            trend = [
+                sum(values[max(0, i-window):i+1]) / min(i+1, window+1)
+                for i in range(len(values))
+            ]
+            ax.plot(rounds, trend, "r--", linewidth=1.5, alpha=0.5)
+
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(True, alpha=0.3)
+        if row == 1:
+            ax.set_xlabel("Round")
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)

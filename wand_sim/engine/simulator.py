@@ -4,7 +4,7 @@ Noita 魔杖模拟器。
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .wand import WandState, WandStats
 from .spell import Spell, SpellType
@@ -68,6 +68,7 @@ class SimResult:
 
     self_damage_risk: float             # 自伤风险
     spell_sequence: list[str]           # 输入序列
+    round_log: list = field(default_factory=list)  # trace 逐轮数据
 
 
 @dataclass
@@ -167,6 +168,7 @@ def simulate(
     target: TargetInfo = TargetInfo(),
     simulate_duration: float = 10.0,
     use_random: bool = False,
+    trace: bool = False,
 ) -> SimResult:
     """
     模拟魔杖持续发射 spell_sequence。
@@ -191,6 +193,7 @@ def simulate(
             total_rounds=0, avg_round_time=0.0, firing_uptime=1.0,
             avg_projectiles_per_second=0.0,
             self_damage_risk=0.0, spell_sequence=[],
+            round_log=[],
         )
 
     wand = WandState(stats=wand_stats)
@@ -208,6 +211,7 @@ def simulate(
     firing_time = 0.0
     idx = 0
     multicast_stack: list[int] = []
+    round_log: list[dict] = []
 
     while total_time < simulate_duration:
         if idx >= len(spell_sequence):
@@ -216,6 +220,17 @@ def simulate(
             wand.regen_mana(effective_recharge)
             recharge_mod = 0.0
             total_rounds += 1
+            if trace and total_projectiles > 0:
+                round_log.append({
+                    "round": total_rounds,
+                    "time": total_time,
+                    "mana_rate": total_mana_spent / total_time,
+                    "avg_dmg": total_damage / total_projectiles,
+                    "hit_rate": total_hit_chance / total_projectiles,
+                    "crit_ratio": total_crit_damage / total_damage if total_damage > 0 else 0,
+                    "firing_uptime": firing_time / total_time,
+                    "self_damage": _estimate_self_damage(spell_sequence),
+                })
             idx = 0
 
         spell = SPELLS.get(spell_sequence[idx])
@@ -263,13 +278,6 @@ def simulate(
                 mods.clear()
 
             idx += 1
-            if idx >= len(spell_sequence) and not multicast_stack:
-                effective_recharge = max(0.0167, wand.stats.recharge_time + recharge_mod)
-                total_time += effective_recharge
-                wand.regen_mana(effective_recharge)
-                recharge_mod = 0.0
-                total_rounds += 1
-                idx = 0
             continue
 
         idx += 1
@@ -284,6 +292,7 @@ def simulate(
             total_rounds=0, avg_round_time=0.0, firing_uptime=1.0,
             avg_projectiles_per_second=0.0,
             self_damage_risk=0.0, spell_sequence=spell_sequence,
+            round_log=[],
         )
 
     dps = total_damage / total_time
@@ -315,4 +324,5 @@ def simulate(
         avg_projectiles_per_second=total_projectiles / total_time,
         self_damage_risk=_estimate_self_damage(spell_sequence),
         spell_sequence=spell_sequence,
+        round_log=round_log,
     )
