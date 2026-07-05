@@ -70,6 +70,7 @@ checkpoints/
 models/
 
 # === 数据文件 ===
+noita_data/
 data/raw/
 data/processed/
 *.parquet

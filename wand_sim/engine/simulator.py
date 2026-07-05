@@ -12,7 +12,6 @@ from .spell import Spell, SpellType
 from .spells_db import SPELLS
 
 DT: float = 1.0 / 60.0 #每帧时间
-GRAVITY_SCALE: float = 2.0 # 重力缩放系数（游戏 px 到真实 px）
 
 @dataclass
 class ModifierStack:
@@ -248,7 +247,7 @@ def _simulate_flight(
         frames_lived += 1
 
         # 重力
-        vy += spell.gravity * GRAVITY_SCALE * DT
+        vy += spell.gravity * DT
 
         # 空气摩擦
         air_friction = 1.0 - spell.air_friction * DT
