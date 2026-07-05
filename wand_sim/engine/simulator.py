@@ -155,7 +155,6 @@ def _fire(
     )
 
     if use_random:
-        import random
         if random.random() >= hit_chance:
             return _FireResult(
                 damage=0.0, mana_consumed=True, mana_drained=mana_taken,
@@ -171,6 +170,21 @@ def _fire(
             damage=base_damage, mana_consumed=True,
             mana_drained=mana_taken, hit_chance=hit_chance, crit_damage=0.0,
         )
+
+    # === 对由物理效果产生的偏差进行修正 ===
+    ## 1. 弹跳
+    if spell.bounces > 0:
+        hit_chance = min(1.0, hit_chance * (1 + spell.bounces * 0.5))
+
+    ## 2.帧伤
+    if spell.damage_every > 0:
+        avg_lifetime = (spell.lifetime_min + spell.lifetime_max) // 2
+        overlap_ticks = min(avg_lifetime // max(spell.damage_every, 1), 30)
+        base_damage *= (1 + overlap_ticks)
+
+    ## 3.穿透
+    if "piercing" in spell.special_effects:
+        hit_chance = min(1.0, hit_chance * 1.5)
 
     expected_crit_mult = 1.0 + 4.0 * crit_chance
     final_damage = base_damage * hit_chance * expected_crit_mult
