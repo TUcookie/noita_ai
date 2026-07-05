@@ -71,7 +71,8 @@ class SimResult:
 
     self_damage_risk: float             # 自伤风险
     spell_sequence: list[str]           # 输入序列
-    round_log: list = field(default_factory=list)  # trace 逐轮数据
+    round_log: list = field(default_factory=list)  # trace 逐轮数据（已弃用）
+    chain_log: list = field(default_factory=list)   # trace 逐链数据
     all_tarj: list[list[dict]] = field(default_factory=list) # 轨迹
 
 
@@ -356,6 +357,7 @@ def simulate(
             avg_projectiles_per_second=0.0,
             self_damage_risk=0.0, spell_sequence=[],
             round_log=[],
+            chain_log=[],
             all_tarj=[[]],
         )
 
@@ -375,12 +377,13 @@ def simulate(
     idx = 0
     batch_slots: int = 0
     _cast_delay_sum: float = 0.0
-    round_log: list[dict] = []
+    chain_log: list[dict] = []
     all_tarj: list[list[dict]] = []
-    # trace 增量追踪
-    _last_proj = 0
-    _last_mana = 0.0
-    _last_dmg = 0.0
+    # trace 链级追踪
+    _chain_idx: int = 0
+    _chain_proj: int = 0
+    _chain_dmg: float = 0.0
+    _chain_hits: int = 0
 
     while total_time < simulate_duration:
         if idx >= len(spell_sequence):
@@ -399,21 +402,16 @@ def simulate(
             mods.clear()
             batch_slots = 0
             _cast_delay_sum = 0.0
-            if trace and total_projectiles > 0:
-                rm = total_mana_spent - _last_mana
-                rdmg = total_damage - _last_dmg
-                round_log.append({
+            _chain_idx = 0
+            if trace:
+                chain_log.append({
                     "round": total_rounds,
-                    "mana_rate": total_mana_spent / total_time,
-                    "cumulative_dps": total_damage / total_time,
-                    "proj_this_round": total_projectiles - _last_proj,
-                    "recharge_time": effective_recharge,
+                    "time": total_time,
+                    "type": "recharge",
+                    "duration": effective_recharge,
                     "recharge_mod": _mod_before_clear,
-                    "mana_efficiency": rdmg / max(rm, 1),
+                    "mana_pct": wand.current_mana / wand.stats.mana_max,
                 })
-                _last_proj = total_projectiles
-                _last_mana = total_mana_spent
-                _last_dmg = total_damage
             idx = 0
 
         # 统一抽牌模型：魔杖每轮抽 1 张，每张牌消耗 1 抽
@@ -472,6 +470,14 @@ def simulate(
 
             if fired_ok:
                 recharge_mod += spell.recharge_time_mod + mods.recharge_time_mod
+                _chain_proj += 1
+                _chain_dmg += dmg
+                if use_random and window is not None:
+                    if hit:
+                        _chain_hits += 1
+                else:
+                    if fr.hit_chance > 0:
+                        _chain_hits += 1
 
             _cast_delay_sum += spell.cast_delay
 
@@ -479,6 +485,24 @@ def simulate(
                 delay = wand.stats.cast_delay + _cast_delay_sum
                 total_time += max(delay, DT)
                 firing_time += max(delay, DT)
+                # 链级 trace: 每链 snapshot
+                if trace and _chain_proj > 0:
+                    chain_log.append({
+                        "round": total_rounds,
+                        "chain": _chain_idx,
+                        "time": total_time,
+                        "type": "chain",
+                        "proj": _chain_proj,
+                        "dmg": _chain_dmg,
+                        "dmg_per_hit": _chain_dmg / _chain_proj,
+                        "hit_rate": _chain_hits / _chain_proj,
+                        "cast_delay": delay,
+                        "mana_pct": wand.current_mana / wand.stats.mana_max,
+                    })
+                    _chain_idx += 1
+                    _chain_proj = 0
+                    _chain_dmg = 0.0
+                    _chain_hits = 0
                 mods.clear()
                 _cast_delay_sum = 0.0
 
@@ -498,6 +522,7 @@ def simulate(
             avg_projectiles_per_second=0.0,
             self_damage_risk=0.0, spell_sequence=spell_sequence,
             round_log=[],
+            chain_log=[],
             all_tarj=[[]]
         )
 
@@ -530,6 +555,7 @@ def simulate(
         avg_projectiles_per_second=total_projectiles / total_time,
         self_damage_risk=_estimate_self_damage(spell_sequence),
         spell_sequence=spell_sequence,
-        round_log=round_log,
+        round_log=chain_log,
+        chain_log=chain_log,
         all_tarj=all_tarj,
     )

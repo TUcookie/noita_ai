@@ -142,46 +142,139 @@ def plot_timeline_metrics(
     wand,
     output_path: str = "best_timeline.png",
 ):
-    """每代最优序列的结构指标 2×3 图。x 轴 = Generation。"""
-    from wand_sim.engine.simulator import simulate
+    """每代最优序列链级指标 2×3 图。x 轴 = Generation。无趋势线，3 秒可读。
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    fig.suptitle("Best Sequence — Per-Generation Structure", fontsize=14)
+    上行 — 火力结构：
+      1. 单发伤害 (avg + 25%-75% 链间带)
+      2. 平均每链投射物
+      3. 每秒投射物
+
+    下行 — 资源代价：
+      4. 每轮耗时 (cast + recharge 堆叠柱)
+      5. 法力效率 (total_dmg / total_mana)
+      6. 序列 SpellType 彩色条
+    """
+    from wand_sim.engine.simulator import simulate, TargetInfo
+    from wand_sim.engine.spells_db import SPELLS
+    from wand_sim.engine.spell import SpellType
+
+    target = TargetInfo(distance_px=300)
+    LINE_W = 2.0
 
     gens = list(range(1, len(history) + 1))
-    dps, hit_rates, proj_ps = [], [], []
-    mana_rates, sustains, round_times = [], [], []
+    dmg_max, dmg_min = [], []           # 每轮最强链 / 最弱链的单发伤害，跨轮均值
+    avg_proj, proj_per_s = [], []
+    cast_times, recharge_times, mana_eff = [], [], []
 
     for c in history:
-        r = simulate(c.sequence, wand, use_random=False)
-        dps.append(r.dps)
-        hit_rates.append(r.hit_rate)
-        proj_ps.append(r.avg_projectiles_per_second)
-        mana_rates.append(r.mana_usage_per_second)
-        sustains.append(r.mana_exhaustion_time / max(r.total_time_simulated, 0.01))
-        round_times.append(r.avg_round_time)
+        r = simulate(c.sequence, wand, target, simulate_duration=30.0, trace=True)
+        chains = [e for e in r.chain_log if e.get("type") == "chain"]
+        recharges = [e for e in r.chain_log if e.get("type") == "recharge"]
 
-    panels = [
-        (dps,          "DPS",            "DPS",                        0, 0),
-        (hit_rates,    "Hit Rate",       "Hit Rate",                   0, 1),
-        (proj_ps,      "Proj / s",       "Projectiles per Second",     0, 2),
-        (mana_rates,   "Mana / s",       "Mana Usage Rate",            1, 0),
-        (sustains,     "Ratio",          "Sustain Ratio",              1, 1),
-        (round_times,  "Seconds",        "Avg Round Time",             1, 2),
-    ]
+        if chains:
+            n = len(chains)
+            # 每轮按链汇总单发伤害，取最强链和最弱链
+            round_chains: dict[int, list[float]] = {}
+            for ch in chains:
+                rd = ch["round"]
+                round_chains.setdefault(rd, []).append(ch["dmg_per_hit"])
+            max_per_round = [max(v) for v in round_chains.values()]
+            min_per_round = [min(v) for v in round_chains.values()]
+            dmg_max.append(sum(max_per_round) / len(max_per_round))
+            dmg_min.append(sum(min_per_round) / len(min_per_round))
+            avg_proj.append(sum(ch["proj"] for ch in chains) / n)
+            cast_times.append(sum(ch["cast_delay"] for ch in chains) / n)
+        else:
+            dmg_max.append(0); dmg_min.append(0)
+            avg_proj.append(0); cast_times.append(0)
 
-    for values, ylabel, title, row, col in panels:
-        ax = axes[row][col]
-        ax.plot(gens, values, "b-", linewidth=1.5, alpha=0.7)
-        if len(values) >= 5:
-            w = max(3, len(values) // 6)
-            trend = [sum(values[max(0,i-w):i+1])/min(i+1,w+1) for i in range(len(values))]
-            ax.plot(gens, trend, "r--", linewidth=1.2, alpha=0.4)
-        ax.set_ylabel(ylabel)
-        ax.set_title(title)
-        ax.grid(True, alpha=0.3)
-        if row == 1:
-            ax.set_xlabel("Generation")
+        recharge_times.append(
+            sum(rch["duration"] for rch in recharges) / max(len(recharges), 1)
+            if recharges else 0
+        )
+        proj_per_s.append(r.avg_projectiles_per_second)
+        mana_eff.append(r.total_damage / max(r.total_mana_spent, 1))
+
+    fig, axes = plt.subplots(2, 3, figsize=(20, 10))
+    fig.suptitle("Best Sequence — Per-Chain Metrics over Generations", fontsize=14)
+
+    # ── Panel 1: 单发伤害 (max / min 链) ──
+    ax = axes[0][0]
+    ax.fill_between(gens, dmg_min, dmg_max, alpha=0.12, color="#4A90D9")
+    ax.plot(gens, dmg_max, color="#E8833A", linewidth=LINE_W, label="Max chain")
+    ax.plot(gens, dmg_min, color="#4A90D9", linewidth=LINE_W, label="Min chain")
+    ax.set_ylabel("Damage")
+    ax.set_title("Damage per Hit (max / min chain)")
+    ax.legend(fontsize=7)
+    ax.grid(True, alpha=0.3)
+
+    # ── Panel 2: 平均每链投射物 ──
+    ax = axes[0][1]
+    ax.plot(gens, avg_proj, color="#4A90D9", linewidth=LINE_W)
+    ax.set_ylabel("Projectiles")
+    ax.set_title("Avg Projectiles per Chain")
+    ax.grid(True, alpha=0.3)
+
+    # ── Panel 3: 每秒投射物 ──
+    ax = axes[0][2]
+    ax.plot(gens, proj_per_s, color="#4A90D9", linewidth=LINE_W)
+    ax.set_ylabel("Proj / s")
+    ax.set_title("Projectiles per Second")
+    ax.grid(True, alpha=0.3)
+
+    # ── Panel 4: 每轮耗时分解 ──
+    ax = axes[1][0]
+    ax.bar(gens, cast_times, color="#4A90D9", label="Cast Delay")
+    ax.bar(gens, recharge_times, bottom=cast_times, color="#E8833A", label="Recharge")
+    ax.set_ylabel("Seconds")
+    ax.set_title("Time per Round (Cast + Recharge)")
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3, axis="y")
+
+    # ── Panel 5: 法力效率 ──
+    ax = axes[1][1]
+    ax.plot(gens, mana_eff, color="#50B86C", linewidth=LINE_W)
+    ax.set_ylabel("Dmg / Mana")
+    ax.set_title("Mana Efficiency")
+    ax.grid(True, alpha=0.3)
+
+    # ── Panel 6: 序列 SpellType 构成 ──
+    TYPE_COLORS = {
+        SpellType.PROJECTILE: "#4A90D9",
+        SpellType.MODIFIER: "#E8833A",
+        SpellType.MULTICAST: "#50B86C",
+        SpellType.UTILITY: "#9B59B6",
+    }
+    ax = axes[1][2]
+    bar_h = 0.9
+    for i, c in enumerate(history):
+        y = i + 1
+        for j, spell_key in enumerate(c.sequence):
+            st = SPELLS[spell_key].type if spell_key in SPELLS else SpellType.OTHER
+            ax.barh(y, 1, left=j, height=bar_h, color=TYPE_COLORS.get(st, "#999"),
+                    edgecolor="white", linewidth=0.2)
+
+    legend_patches = [plt.Rectangle((0, 0), 1, 1, fc=c, label=t.value)
+                      for t, c in TYPE_COLORS.items() if any(
+                          SPELLS[s].type == t for gen in history for s in gen.sequence if s in SPELLS)]
+    ax.legend(handles=legend_patches, fontsize=7, loc="lower right")
+    ax.set_xlabel("Slot")
+    ax.set_ylabel("Generation")
+    ax.set_title("SpellType Composition")
+    ax.set_ylim(len(history) + 0.5, 0.5)
+    _yticks6 = [1] + [i for i in range(5, len(history) + 1, 5)]
+    ax.set_yticks(_yticks6)
+    ax.set_xlim(0, max(len(c.sequence) for c in history))
+
+    # ── x 轴每 5 代一个刻度（面板 1-5）──
+    xticks5 = [1] + [i for i in range(5, len(history) + 1, 5)]
+    for row in range(2):
+        for col in range(3):
+            ax = axes[row][col]
+            if row == 1:
+                ax.set_xlabel("Generation")
+            if not (row == 1 and col == 2):  # 跳过 SpellType 面板
+                ax.set_xticks(xticks5)
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

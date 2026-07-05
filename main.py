@@ -58,7 +58,7 @@ def main():
     print(f"分数：{best.fitness:.1f}")
 
     # 30s 验证
-    final = simulate(best.sequence, wand, target, simulate_duration=30.0)
+    final = simulate(best.sequence, wand, target, simulate_duration=30.0, trace=True)
     print(f"DPS (30s): {final.dps:.1f}")
     print(f"首次法力耗尽时间: {final.mana_exhaustion_time:.1f}s")
     print(f"每秒命中: {final.avg_projectiles_per_second:.1f}")
