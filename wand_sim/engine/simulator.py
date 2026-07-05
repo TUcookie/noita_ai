@@ -384,12 +384,19 @@ def simulate(
 
     while total_time < simulate_duration:
         if idx >= len(spell_sequence):
+            # 充能前结算未完成的批次（如 modifiers 的 draw_actions 未消耗完）
+            if batch_slots > 0:
+                delay = wand.stats.cast_delay + _cast_delay_sum
+                total_time += max(delay, DT)
+                firing_time += max(delay, DT)
+
             _mod_before_clear = recharge_mod
             effective_recharge = max(DT, wand.stats.recharge_time + recharge_mod)
             total_time += effective_recharge
             wand.regen_mana(effective_recharge)
             recharge_mod = 0.0
             total_rounds += 1
+            mods.clear()
             batch_slots = 0
             _cast_delay_sum = 0.0
             if trace and total_projectiles > 0:
@@ -408,6 +415,11 @@ def simulate(
                 _last_mana = total_mana_spent
                 _last_dmg = total_damage
             idx = 0
+
+        # 统一抽牌模型：魔杖每轮抽 1 张，每张牌消耗 1 抽
+        if batch_slots == 0:
+            batch_slots = 1
+        batch_slots -= 1
 
         spell = SPELLS.get(spell_sequence[idx])
         if spell is None:
@@ -429,9 +441,6 @@ def simulate(
 
         # === 投射物 & 实用 ===
         if spell.type in (SpellType.PROJECTILE, SpellType.UTILITY):
-            if batch_slots == 0:
-                batch_slots = 1
-
             fired_ok = False
             if use_random and window is not None:
                 total_spread = (
@@ -465,7 +474,6 @@ def simulate(
                 recharge_mod += spell.recharge_time_mod + mods.recharge_time_mod
 
             _cast_delay_sum += spell.cast_delay
-            batch_slots -= 1
 
             if batch_slots == 0:
                 delay = wand.stats.cast_delay + _cast_delay_sum

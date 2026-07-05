@@ -27,7 +27,7 @@ def main():
         recharge_time=0.33,
         mana_max=300,
         mana_charge_speed=30,
-        capacity=4,
+        capacity=8,
         spread=3.0,
     )
     target = TargetInfo(distance_px=300, is_moving=False)
