@@ -78,6 +78,7 @@ class Spell:
 
     # === 多重施法 ===
     multicast_count: int = 0   # 一次取几个 spell
+    draw_actions: int = 0      # modifier 额外抽取数
 
     # === 特殊效果 ===
     special_effects: list[str] = field(default_factory=list)

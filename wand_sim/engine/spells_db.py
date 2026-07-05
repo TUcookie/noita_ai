@@ -112,13 +112,15 @@ SPELLS : dict[str, Spell] = {
         cast_delay=0.08,
         recoil=10,
         projectile_mod=10.0,
+        draw_actions=1,
     ),
     "speed_up": Spell(
         id="SPEED",
         name_zh="加速",
         type=SpellType.MODIFIER,
         mana_drain=3,
-        speed_mod=2.50
+        speed_mod=2.50,
+        draw_actions=1,
     ),
     "add_mana": Spell(
         id="MANA_REDUCE",
@@ -126,6 +128,7 @@ SPELLS : dict[str, Spell] = {
         type=SpellType.MODIFIER,
         mana_drain=-30,
         cast_delay=0.17,
+        draw_actions=1,
     ),
     # 多重释放(2/14)
     "double_spell": Spell(

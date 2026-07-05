@@ -26,6 +26,7 @@ class ModifierStack:
     def apply(self, spell: Spell):
         self.projectile_mod += spell.projectile_mod
         self.speed_mod *= spell.speed_mod
+        self.speed_mod = max(0.0, min(20.0, self.speed_mod))  # 游戏上限 [0, 20]
         self.spread_mod += spell.spread_mod
         self.crit_mod += spell.crit_mod
         self.mana_mod += spell.mana_mod
@@ -372,7 +373,8 @@ def simulate(
     mana_exhaustion_time = -1.0
     firing_time = 0.0
     idx = 0
-    multicast_stack: list[int] = []
+    batch_slots: int = 0
+    _cast_delay_sum: float = 0.0
     round_log: list[dict] = []
     all_tarj: list[list[dict]] = []
     # trace 增量追踪
@@ -388,6 +390,8 @@ def simulate(
             wand.regen_mana(effective_recharge)
             recharge_mod = 0.0
             total_rounds += 1
+            batch_slots = 0
+            _cast_delay_sum = 0.0
             if trace and total_projectiles > 0:
                 rm = total_mana_spent - _last_mana
                 rdmg = total_damage - _last_dmg
@@ -412,21 +416,22 @@ def simulate(
 
         # === 多重释放 ===
         if spell.type == SpellType.MULTICAST:
-            if multicast_stack:
-                multicast_stack[-1] -= 1
-                while multicast_stack and multicast_stack[-1] <= 0:
-                    multicast_stack.pop()
-            multicast_stack.append(spell.multicast_count)
+            batch_slots += spell.multicast_count
             idx += 1
             continue
 
         if spell.type == SpellType.MODIFIER:
             mods.apply(spell)
+            _cast_delay_sum += spell.cast_delay
+            batch_slots += spell.draw_actions
             idx += 1
             continue
 
         # === 投射物 & 实用 ===
         if spell.type in (SpellType.PROJECTILE, SpellType.UTILITY):
+            if batch_slots == 0:
+                batch_slots = 1
+
             fired_ok = False
             if use_random and window is not None:
                 total_spread = (
@@ -459,16 +464,15 @@ def simulate(
             if fired_ok:
                 recharge_mod += spell.recharge_time_mod + mods.recharge_time_mod
 
-            if multicast_stack:
-                multicast_stack[-1] -= 1
-                while multicast_stack and multicast_stack[-1] <= 0:
-                    multicast_stack.pop()
+            _cast_delay_sum += spell.cast_delay
+            batch_slots -= 1
 
-            if not multicast_stack:
-                delay = wand.stats.cast_delay + spell.cast_delay
+            if batch_slots == 0:
+                delay = wand.stats.cast_delay + _cast_delay_sum
                 total_time += max(delay, DT)
                 firing_time += max(delay, DT)
                 mods.clear()
+                _cast_delay_sum = 0.0
 
             idx += 1
             continue
