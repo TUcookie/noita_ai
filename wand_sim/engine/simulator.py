@@ -4,12 +4,15 @@ Noita 魔杖模拟器。
 """
 
 import math
+import random
 from dataclasses import dataclass, field
 
 from .wand import WandState, WandStats
 from .spell import Spell, SpellType
 from .spells_db import SPELLS
 
+DT: float = 1.0 / 60.0 #每帧时间
+GRAVITY_SCALE: float = 2.0 # 重力缩放系数（游戏 px 到真实 px）
 
 @dataclass
 class ModifierStack:
@@ -69,6 +72,7 @@ class SimResult:
     self_damage_risk: float             # 自伤风险
     spell_sequence: list[str]           # 输入序列
     round_log: list = field(default_factory=list)  # trace 逐轮数据
+    all_tarj: list[list[dict]] = field(default_factory=list) # 轨迹
 
 
 @dataclass
@@ -78,6 +82,27 @@ class _FireResult:
     mana_drained: int       # 扣除的法力值
     hit_chance: float       # 命中率
     crit_damage: float      # 暴击贡献的伤害
+
+@dataclass
+class SimWindow:
+    '''战场模拟器'''
+    width: float = 800.0
+    height: float = 600.0
+    wand_pos: tuple[float, float] = (50.0, 300.0)
+    target_pos: tuple[float, float] = (350.0, 300.0)
+    target_radius: float = 15.0
+    # AABB 矩形: [(x, y, w, h), ...]  — 
+    obstacles: list[tuple[float, float, float, float]] = field(
+        default_factory=list,
+    )
+
+    @property
+    def direction(self) -> tuple[float, float]:
+        "wand -> target 的单位方向向量"
+        dx = self.target_pos[0] - self.wand_pos[0]
+        dy = self.target_pos[1] - self.wand_pos[1]
+        len = (dx**2 + dy**2) ** 0.5
+        return (dx / len, dy / len)
 
 
 def _calc_hit_chance(
@@ -161,6 +186,142 @@ def _estimate_self_damage(sequence: list[str]) -> float:
     risk_map: dict[str, float] = {}
     return max((risk_map.get(sid, 0.0) for sid in sequence), default=0.0)
 
+def _simulate_flight(
+        spell: Spell,
+        mods: "ModifierStack",
+        total_spread: float,
+        window: "SimWindow",
+        use_random: bool,
+) -> tuple[float, list[dict], int, bool, float]:
+    '''
+    逐帧模拟投射物飞行
+
+    Args:
+        spell: 发射的投射物法术
+        mods: 当前累积的 modifier 效果
+        total_spread: 总散射角（度）
+        window: 战场窗口
+        use_random: 是否用真随机
+
+    Returns:
+        total_damage: 实际造成伤害
+        trajectory: 弹道轨迹
+        
+        frames_lived: 存活帧数
+        hit_target: 是否命中目标
+        crit_damage: 暴击贡献的伤害
+    '''
+
+    # === 发射阶段 ===
+    dx, dy = window.direction
+    if use_random:
+        base_speed = random.randint(spell.initial_speed_min, spell.initial_speed_max)
+    else:
+        base_speed = (spell.initial_speed_min + spell.initial_speed_max) / 2
+    speed = base_speed * mods.speed_mod
+
+    if total_spread > 0 and use_random:
+        half = math.radians(total_spread) / 2
+        angle = random.uniform(-half, half)
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        vx = (dx * cos_a - dy * sin_a) * speed
+        vy = (dx * sin_a + dy * cos_a) * speed
+    else:
+        vx = dx * speed
+        vy = dy * speed
+
+    px, py = window.wand_pos
+    bounces_left = spell.bounces
+    has_piercing = "piercing" in spell.special_effects
+    frames_lived = 0
+    total_damage = 0.0
+    crit_damage = 0.0
+    trajectory: list[dict] = []
+    if use_random:
+        lifetime = random.randint(spell.lifetime_min, spell.lifetime_max)
+    else:
+        lifetime = (spell.lifetime_min + spell.lifetime_max) // 2
+    hit_target = False
+
+    # === 逐帧模拟阶段 ===
+    while frames_lived < lifetime:
+        frames_lived += 1
+
+        # 重力
+        vy += spell.gravity * GRAVITY_SCALE * DT
+
+        # 空气摩擦
+        air_friction = 1.0 - spell.air_friction * DT
+        vx *= air_friction
+        vy *= air_friction
+
+        # 更新位置
+        px += vx * DT
+        py += vy * DT
+
+        # 记录轨迹
+        trajectory.append({
+            "frame": frames_lived,
+            "x": px, "y": py,
+            "vx": vx, "vy": vy,
+        })    
+
+        # == 碰撞检测 ==
+        ## 1.窗口边界反射
+        bounced = False
+        if px < 0 or px > window.width:
+            vx = -vx
+            bounced = True
+        if py < 0 or py > window.height:
+            vy = -vy
+            bounced = True
+        if bounced:
+            bounces_left -= 1
+            if bounces_left < 0:
+                break
+
+        ## 2.障碍物碰撞
+        for (ox, oy, ow, oh) in window.obstacles:
+            if ox <= px <= ox + ow and oy <= py <= oy + oh:
+                # 忽略入射角的反弹
+                vx = -vx
+                vy = -vy
+                bounces_left -= 1
+                if bounces_left < 0:
+                    break
+                break
+
+        ## 3.目标命中判定
+        tx, ty = window.target_pos
+        dx_t = px - tx
+        dy_t = py - ty
+        dist_to_target = (dx_t**2 + dy_t**2) ** 0.5
+        if dist_to_target <= window.target_radius:
+            base = (spell.projectile + spell.explosion + spell.slice
+                    + spell.fire + mods.projectile_mod)
+            if not hit_target:
+                # 暴击判定
+                total_crit = spell.critical_chance + mods.crit_mod
+                if use_random and random.random() < total_crit / 100.0:
+                    total_damage += base * 5.0
+                    crit_damage += base * 4.0
+                else:
+                    total_damage += base
+                hit_target = True
+
+            # 帧伤
+            if spell.damage_every > 0 and frames_lived % spell.damage_every == 0:
+                total_damage += base
+
+            # 无穿透则命中后消失
+            if not has_piercing:
+                break
+
+        ## 4.超时或出界太远
+        if px < -500 or px > window.width + 500 or py < -500 or py >window.height + 500:
+            break
+
+    return total_damage, trajectory, frames_lived, hit_target, crit_damage
 
 def simulate(
     spell_sequence: list[str],
@@ -169,6 +330,7 @@ def simulate(
     simulate_duration: float = 10.0,
     use_random: bool = False,
     trace: bool = False,
+    window: SimWindow | None = None,
 ) -> SimResult:
     """
     模拟魔杖持续发射 spell_sequence。
@@ -194,6 +356,7 @@ def simulate(
             avg_projectiles_per_second=0.0,
             self_damage_risk=0.0, spell_sequence=[],
             round_log=[],
+            all_tarj=[[]],
         )
 
     wand = WandState(stats=wand_stats)
@@ -212,8 +375,8 @@ def simulate(
     idx = 0
     multicast_stack: list[int] = []
     round_log: list[dict] = []
+    all_tarj: list[list[dict]] = []
     # trace 增量追踪
-    _last_proj = 0
     _last_proj = 0
     _last_mana = 0.0
     _last_dmg = 0.0
@@ -221,7 +384,7 @@ def simulate(
     while total_time < simulate_duration:
         if idx >= len(spell_sequence):
             _mod_before_clear = recharge_mod
-            effective_recharge = max(0.0167, wand.stats.recharge_time + recharge_mod)
+            effective_recharge = max(DT, wand.stats.recharge_time + recharge_mod)
             total_time += effective_recharge
             wand.regen_mana(effective_recharge)
             recharge_mod = 0.0
@@ -265,16 +428,37 @@ def simulate(
 
         # === 投射物 & 实用 ===
         if spell.type in (SpellType.PROJECTILE, SpellType.UTILITY):
-            fr = _fire(wand, spell, mods, target, use_random)
-            if fr.mana_consumed:
-                total_damage += fr.damage
-                total_crit_damage += fr.crit_damage
+            fired_ok = False
+            if use_random and window is not None:
+                total_spread = (
+                    wand.stats.spread + spell.spread
+                    + spell.spread_mod + mods.spread_mod
+                )
+                dmg, traj, frames, hit, crit_dmg = _simulate_flight(
+                    spell, mods, total_spread, window, use_random,
+                )
+                fired_ok = True
+                total_damage += dmg
+                total_crit_damage += crit_dmg
                 total_projectiles += 1
-                total_mana_spent += fr.mana_drained
-                total_hit_chance += fr.hit_chance
+                total_mana_spent += max(0, spell.mana_drain + mods.mana_mod)
+                total_hit_chance += (1.0 if hit else 0.0)
+                all_tarj.append(traj)
+            else:
+                fr = _fire(wand, spell, mods, target, use_random)
+                dmg = fr.damage
+                if fr.mana_consumed:
+                    total_damage += fr.damage
+                    total_crit_damage += fr.crit_damage
+                    total_projectiles += 1
+                    total_mana_spent += fr.mana_drained
+                    total_hit_chance += fr.hit_chance
+                    fired_ok = True
+                elif mana_exhaustion_time < 0:
+                    mana_exhaustion_time = total_time
+
+            if fired_ok:
                 recharge_mod += spell.recharge_time_mod + mods.recharge_time_mod
-            elif mana_exhaustion_time < 0:
-                mana_exhaustion_time = total_time
 
             if multicast_stack:
                 multicast_stack[-1] -= 1
@@ -283,8 +467,8 @@ def simulate(
 
             if not multicast_stack:
                 delay = wand.stats.cast_delay + spell.cast_delay
-                total_time += max(delay, 0.0167)
-                firing_time += max(delay, 0.0167)
+                total_time += max(delay, DT)
+                firing_time += max(delay, DT)
                 mods.clear()
 
             idx += 1
@@ -303,6 +487,7 @@ def simulate(
             avg_projectiles_per_second=0.0,
             self_damage_risk=0.0, spell_sequence=spell_sequence,
             round_log=[],
+            all_tarj=[[]]
         )
 
     dps = total_damage / total_time
@@ -335,4 +520,5 @@ def simulate(
         self_damage_risk=_estimate_self_damage(spell_sequence),
         spell_sequence=spell_sequence,
         round_log=round_log,
+        all_tarj=all_tarj,
     )
