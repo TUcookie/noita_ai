@@ -139,7 +139,7 @@ def _fire(
         )
 
     base_damage = (
-        spell.projectile + spell.explosion + spell.slice
+        spell.projectile + spell.explosion + spell.slice + spell.fire
         + mods.projectile_mod
     )
     total_crit = spell.critical_chance + mods.crit_mod

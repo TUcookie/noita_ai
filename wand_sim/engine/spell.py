@@ -82,3 +82,6 @@ class Spell:
 
     # === 特殊效果 ===
     special_effects: list[str] = field(default_factory=list)
+
+    # === 标签 ===
+    tags: list[str] = field(default_factory=list)
