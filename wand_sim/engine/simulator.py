@@ -1,4 +1,4 @@
-"""
+﻿"""
 Noita 魔杖模拟器。
 按 spell 序列顺序模拟发射过程，计算 DPS 和法力可持续性。
 """
@@ -30,6 +30,8 @@ class ModifierStack:
         self.spread_mod += spell.spread_mod
         self.crit_mod += spell.crit_mod
         self.mana_mod += spell.mana_mod
+        if spell.mana_drain < 0:
+            self.mana_mod += spell.mana_drain
         self.recharge_time_mod += spell.recharge_time_mod
 
     def clear(self):
@@ -129,10 +131,8 @@ def _fire(
     use_random: bool,
 ) -> _FireResult:
     """发射一个法术，返回详细的单发结果。"""
-    mana_drain = spell.mana_drain + mods.mana_mod
-    mana_taken = max(0, mana_drain)
-
-    if not wand.consume_mana(mana_taken):
+    mana_consumed, mana_taken = _consume_spell_mana(wand, spell, mods)
+    if not mana_consumed:
         return _FireResult(
             damage=0.0, mana_consumed=False, mana_drained=0,
             hit_chance=0.0, crit_damage=0.0,
@@ -194,6 +194,23 @@ def _fire(
         mana_drained=mana_taken, hit_chance=hit_chance,
         crit_damage=crit_damage,
     )
+
+
+def _consume_spell_mana(
+    wand: WandState,
+    spell: Spell,
+    mods: ModifierStack | None = None,
+) -> tuple[bool, int]:
+    '''
+    处理 spell 扣蓝
+    '''
+    mana_drain = spell.mana_drain
+    if mods is not None:
+        mana_drain += mods.mana_mod
+    mana_taken = max(0, mana_drain)
+    if not wand.consume_mana(mana_taken):
+        return False, 0
+    return True, mana_taken
 
 
 def _estimate_self_damage(sequence: list[str]) -> float:
@@ -440,14 +457,24 @@ def simulate(
 
         # === 多重释放 ===
         if spell.type == SpellType.MULTICAST:
-            batch_slots += spell.multicast_count
+            mana_ok, mana_drained = _consume_spell_mana(wand, spell)
+            if mana_ok:
+                total_mana_spent += mana_drained
+                batch_slots += spell.multicast_count
+            elif mana_exhaustion_time < 0:
+                mana_exhaustion_time = total_time
             idx += 1
             continue
 
         if spell.type == SpellType.MODIFIER:
-            mods.apply(spell)
-            _cast_delay_sum += spell.cast_delay
-            batch_slots += spell.draw_actions
+            mana_ok, mana_drained = _consume_spell_mana(wand, spell)
+            if mana_ok:
+                total_mana_spent += mana_drained
+                mods.apply(spell)
+                _cast_delay_sum += spell.cast_delay
+                batch_slots += spell.draw_actions
+            elif mana_exhaustion_time < 0:
+                mana_exhaustion_time = total_time
             idx += 1
             continue
 
@@ -455,20 +482,24 @@ def simulate(
         if spell.type in (SpellType.PROJECTILE, SpellType.UTILITY):
             fired_ok = False
             if use_random and window is not None:
-                total_spread = (
-                    wand.stats.spread + spell.spread
-                    + spell.spread_mod + mods.spread_mod
-                )
-                dmg, traj, frames, hit, crit_dmg = _simulate_flight(
-                    spell, mods, total_spread, window, use_random,
-                )
-                fired_ok = True
-                total_damage += dmg
-                total_crit_damage += crit_dmg
-                total_projectiles += 1
-                total_mana_spent += max(0, spell.mana_drain + mods.mana_mod)
-                total_hit_chance += (1.0 if hit else 0.0)
-                all_tarj.append(traj)
+                mana_ok, mana_drained = _consume_spell_mana(wand, spell, mods)
+                if mana_ok:
+                    total_spread = (
+                        wand.stats.spread + spell.spread
+                        + spell.spread_mod + mods.spread_mod
+                    )
+                    dmg, traj, frames, hit, crit_dmg = _simulate_flight(
+                        spell, mods, total_spread, window, use_random,
+                    )
+                    fired_ok = True
+                    total_damage += dmg
+                    total_crit_damage += crit_dmg
+                    total_projectiles += 1
+                    total_mana_spent += mana_drained
+                    total_hit_chance += (1.0 if hit else 0.0)
+                    all_tarj.append(traj)
+                elif mana_exhaustion_time < 0:
+                    mana_exhaustion_time = total_time
             else:
                 fr = _fire(wand, spell, mods, target, use_random)
                 dmg = fr.damage
