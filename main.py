@@ -39,6 +39,16 @@ def main():
     print(f"目标: 距离={target.distance_px}px")
     print("=" * 60)
 
+    spell_inventory={
+        "spark_bolt": 2,
+        "magic_arrow": 2,
+        "energy_orb": 2,
+        "chainsaw": 3,
+        "damage_plus": 2,
+        "add_mana": 1,
+        "double_spell": 1,
+    }
+
     # 遗传算法
     history, all_fitness, all_pop = run_es(
         wand=wand,
@@ -47,6 +57,7 @@ def main():
         elite_count=20,
         generations=50,
         max_seq_len=wand.capacity,
+        spell_inventory=spell_inventory,
         return_pop=True,
         verbose=True,
     )
